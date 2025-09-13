@@ -1,0 +1,12 @@
+
+# Dependencies
+/node_modules
+/client/node_modules
+/server/node_modules
+
+# Uploads
+/server/uploads
+
+# IDE and OS files
+.DS_Store
+.vscode/
