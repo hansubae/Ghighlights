@@ -109,10 +109,10 @@ app.get('/auth/kakao/callback', async (req, res) => {
 
     if (existingUser) {
       // User exists, log them in
-      res.redirect(`http://211.105.35.84:3000?user=${encodeURIComponent(JSON.stringify(existingUser))}`);
+      res.redirect(`http://localhost:3000?user=${encodeURIComponent(JSON.stringify(existingUser))}`);
     } else {
       // New user, prompt for nickname
-      res.redirect(`http://211.105.35.84:3000?new_user=true&kakao_id=${kakaoId}`);
+      res.redirect(`http://localhost:3000?new_user=true&kakao_id=${kakaoId}`);
     }
 
   } catch (error) {
@@ -406,5 +406,5 @@ app.use((err, req, res, next) => {
 });
 
 server.listen(port, () => {
-  console.log(`Server is running on http://211.105.35.84:${port}`);
+  console.log(`Server is running on http://localhost:${port}`);
 });
