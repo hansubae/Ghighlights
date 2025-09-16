@@ -52,6 +52,7 @@ wss.on('connection', (ws) => {
 
 app.use(cors());
 app.use(express.json());
+app.set('trust proxy', true); // IP 주소를 정확히 파악하기 위한 설정
 
 // KAKAO LOGIN
 const KAKAO_CLIENT_ID = process.env.KAKAO_CLIENT_ID;
@@ -108,10 +109,10 @@ app.get('/auth/kakao/callback', async (req, res) => {
 
     if (existingUser) {
       // User exists, log them in
-      res.redirect(`http://localhost:3000?user=${encodeURIComponent(JSON.stringify(existingUser))}`);
+      res.redirect(`http://211.105.35.84:3000?user=${encodeURIComponent(JSON.stringify(existingUser))}`);
     } else {
       // New user, prompt for nickname
-      res.redirect(`http://localhost:3000?new_user=true&kakao_id=${kakaoId}`);
+      res.redirect(`http://211.105.35.84:3000?new_user=true&kakao_id=${kakaoId}`);
     }
 
   } catch (error) {
@@ -186,7 +187,8 @@ app.get('/api/videos', async (req, res) => {
     query = query.order('views', { ascending: false });
   } else if (sort === 'popular') {
     query = query.order('likes', { ascending: false });
-  } else {
+  }
+  else {
     query = query.order('uploaded_at', { ascending: false });
   }
 
@@ -212,6 +214,24 @@ app.get('/api/videos/search', async (req, res) => {
     if (error) {
         console.error('Error searching videos from Supabase:', error);
         return res.status(500).json({ message: 'Failed to search videos' });
+    }
+
+    res.json(data);
+});
+
+app.get('/api/videos/user/:nickname', async (req, res) => {
+    const { nickname } = req.params;
+    if (!nickname) return res.status(400).json({ message: 'Nickname is required' });
+
+    const { data, error } = await supabase
+        .from('videos')
+        .select('*')
+        .eq('user', nickname)
+        .order('uploaded_at', { ascending: false });
+
+    if (error) {
+        console.error('Error fetching user videos from Supabase:', error);
+        return res.status(500).json({ message: 'Failed to fetch user videos' });
     }
 
     res.json(data);
@@ -315,6 +335,70 @@ app.delete('/api/videos/:id', async (req, res) => {
     res.status(200).json({ message: 'Video deleted successfully.' });
 });
 
+app.post('/api/videos/:id/view', async (req, res) => {
+  const { id: videoId } = req.params;
+  // IP 주소를 더 안정적으로 가져오기
+  const ipAddress = req.ip || req.socket.remoteAddress;
+  console.log(`View request received for video ${videoId} from IP ${ipAddress}`);
+
+  if (!videoId) {
+    return res.status(400).json({ message: 'Video ID is required.' });
+  }
+  if (!ipAddress) {
+    return res.status(400).json({ message: 'Could not determine IP address.' });
+  }
+
+  try {
+    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    console.log('Checking for recent view...');
+
+    const { data: existingView, error: selectError } = await supabase
+      .from('view_history')
+      .select('id')
+      .eq('video_id', videoId)
+      .eq('ip_address', ipAddress)
+      .gt('viewed_at', twentyFourHoursAgo)
+      .maybeSingle();
+
+    if (selectError) {
+      console.error('Error checking view history:', selectError);
+      return res.status(500).json({ message: 'Error checking view history.' });
+    }
+
+    if (!existingView) {
+      console.log('No recent view found. Proceeding to increment count.');
+
+      const { error: rpcError } = await supabase.rpc('increment_views', {
+        video_id_to_update: videoId,
+      });
+
+      if (rpcError) {
+        console.error('Error incrementing view count via RPC:', rpcError);
+        return res.status(500).json({ message: 'Error incrementing view count.' });
+      }
+      console.log('Successfully incremented view count in videos table.');
+
+      const { error: insertError } = await supabase
+        .from('view_history')
+        .insert({ video_id: videoId, ip_address: ipAddress });
+
+      if (insertError) {
+        console.error('Error inserting into view_history:', insertError);
+        // Note: This error is not returned to client as the main goal (incrementing) succeeded.
+      }
+      console.log('Successfully inserted into view_history.');
+
+      return res.status(200).json({ message: 'View count updated.' });
+    } else {
+      console.log('Recent view found. Not incrementing.');
+      return res.status(200).json({ message: 'View already counted within 24 hours.' });
+    }
+  } catch (error) {
+    console.error('Error processing view count:', error);
+    return res.status(500).json({ message: 'An unexpected error occurred while processing view count.' });
+  }
+});
+
 // General error handling middleware
 app.use((err, req, res, next) => {
   console.error(err.stack); // Log the error stack for debugging
@@ -322,5 +406,5 @@ app.use((err, req, res, next) => {
 });
 
 server.listen(port, () => {
-  console.log(`Server is running on http://localhost:${port}`);
+  console.log(`Server is running on http://211.105.35.84:${port}`);
 });

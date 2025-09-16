@@ -1,12 +1,24 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { Routes, Route, Link } from 'react-router-dom';
 import AutocompleteInput from './components/AutocompleteInput';
+import ProfilePage from './components/ProfilePage'; // Import ProfilePage
 import './App.css';
 
 const API_URL = 'http://localhost:3001/api';
 const WS_URL = 'ws://localhost:3001';
 
-// 메인 앱 컴포넌트
+// Main App Component - now contains routing logic
 function App() {
+  return (
+    <Routes>
+      <Route path="/" element={<MainPage />} />
+      <Route path="/profile/:nickname" element={<ProfilePage />} />
+    </Routes>
+  );
+}
+
+// The original App component is renamed to MainPage
+function MainPage() {
   const [videos, setVideos] = useState([]);
   const [categories, setCategories] = useState([]);
   const [subscriptions, setSubscriptions] = useState([]);
@@ -19,6 +31,7 @@ function App() {
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [isNicknameModalOpen, setIsNicknameModalOpen] = useState(false);
   const [tempKakaoId, setTempKakaoId] = useState(null);
+  const [countedVideoIds, setCountedVideoIds] = useState([]); // State for client-side optimization
   const ws = useRef(null);
 
   const gameSuggestions = [
@@ -70,20 +83,67 @@ function App() {
     const newUserParam = urlParams.get('new_user');
     const kakaoIdParam = urlParams.get('kakao_id');
 
-    if (userParam) {
+    if (userParam) { // Case 1: User just logged in via Kakao redirect
       try {
         const user = JSON.parse(decodeURIComponent(userParam));
         setCurrentUser(user);
         setIsLoggedIn(true);
+        localStorage.setItem('currentUser', JSON.stringify(user)); // Store user
       } catch (error) {
         console.error("Failed to parse user data from URL", error);
       }
-    } else if (newUserParam === 'true' && kakaoIdParam) {
+      // Clean the URL
+      window.history.replaceState({}, document.title, "/");
+    } else if (newUserParam === 'true' && kakaoIdParam) { // Case 2: New user needs to set nickname
       setTempKakaoId(kakaoIdParam);
       setIsNicknameModalOpen(true);
+      // Clean the URL
+      window.history.replaceState({}, document.title, "/");
+    } else { // Case 3: Normal page load or refresh
+      const storedUser = localStorage.getItem('currentUser');
+      if (storedUser) {
+        try {
+          const user = JSON.parse(storedUser);
+          setCurrentUser(user);
+          setIsLoggedIn(true);
+        } catch (error) {
+          console.error("Failed to parse user data from localStorage", error);
+          localStorage.removeItem('currentUser');
+        }
+      }
     }
-    window.history.replaceState({}, document.title, "/");
   }, []);
+
+  // Effect for counting video views
+  useEffect(() => {
+    if (selectedVideo && !countedVideoIds.includes(selectedVideo.id)) {
+      fetch(`${API_URL}/videos/${selectedVideo.id}/view`, {
+        method: 'POST',
+      })
+      .then(res => res.json())
+      .then(data => {
+        console.log('View count response:', data.message);
+        // Check if the server successfully updated the count
+        if (data.message === 'View count updated.') {
+          // Update the local state to reflect the new view count immediately
+          setVideos(currentVideos =>
+            currentVideos.map(video =>
+              video.id === selectedVideo.id
+                ? { ...video, views: video.views + 1 }
+                : video
+            )
+          );
+        }
+        // Add to session-counted list regardless of server response to prevent re-sends
+        setCountedVideoIds(prev => [...prev, selectedVideo.id]);
+      })
+      .catch(err => {
+        console.error('Failed to send view count:', err);
+        // Also add to counted list on error to prevent spamming a failing endpoint
+        setCountedVideoIds(prev => [...prev, selectedVideo.id]);
+      });
+    }
+  }, [selectedVideo, countedVideoIds]);
 
   const fetchVideos = (sort = 'latest', category = null) => {
     let url = `${API_URL}/videos?sort=${sort}`;
@@ -125,7 +185,7 @@ function App() {
 
   const handleLogin = async () => {
     try {
-      const response = await fetch(`http://localhost:3001/auth/kakao`);
+      const response = await fetch(`http://211.105.35.84:3001/auth/kakao`);
       const { kakaoAuthURL } = await response.json();
       window.location.href = kakaoAuthURL;
     } catch (error) {
@@ -136,6 +196,7 @@ function App() {
   const handleLogout = () => {
     setIsLoggedIn(false);
     setCurrentUser(null);
+    localStorage.removeItem('currentUser');
     window.location.href = "/";
   };
 
@@ -156,6 +217,7 @@ function App() {
       }
       setCurrentUser(newUser);
       setIsLoggedIn(true);
+      localStorage.setItem('currentUser', JSON.stringify(newUser));
       setIsNicknameModalOpen(false);
       setTempKakaoId(null);
     } catch (error) {
@@ -295,7 +357,9 @@ const Header = ({ isLoggedIn, currentUser, onLogin, onLogout, onSearch, onSubscr
         <button className="header-button" onClick={onSubscriptionsClick}>{buttonText}</button>
         {isLoggedIn ? (
           <>
-            <span className="username">환영합니다, {currentUser.nickname}님!</span>
+            <Link to={`/profile/${currentUser.nickname}`} className="username-link">
+              <span className="username">환영합니다, {currentUser.nickname}님!</span>
+            </Link>
             <button className="header-button" onClick={onUploadClick}>영상 업로드</button>
             <button className="header-button" onClick={onLogout}>로그아웃</button>
           </>
