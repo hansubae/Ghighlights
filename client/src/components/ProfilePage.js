@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import '../App.css'; // Use the main App's CSS for a similar feel
 
-const API_URL = 'http://211.105.35.84:3001/api';
+const API_URL = 'http://localhost:3001/api';
 
 function ProfilePage() {
   const { nickname } = useParams();
