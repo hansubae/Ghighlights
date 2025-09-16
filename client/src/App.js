@@ -185,7 +185,7 @@ function MainPage() {
 
   const handleLogin = async () => {
     try {
-      const response = await fetch(`http://211.105.35.84:3001/auth/kakao`);
+      const response = await fetch(`http://localhost:3001/auth/kakao`);
       const { kakaoAuthURL } = await response.json();
       window.location.href = kakaoAuthURL;
     } catch (error) {
